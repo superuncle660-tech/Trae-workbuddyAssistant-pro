@@ -382,12 +382,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   refreshWbClient: async () => {
+    // WorkBuddy 客户端 5.6.2 起对 workbuddy-desktop.info 里的 token 做了字段级加密
+    // （accessToken / refreshToken 变成 { $wbEncrypted, envelope }），Rust 侧按明文字符串
+    // 解析会反序列化失败 → clientStatus 抛错。旧实现此处 catch 是空的，状态就永远停在
+    // store 初值 false，左上角常驻误报「客户端未登录」（「导入本机账号」同因失败）。
+    //
+    // 判据改为两级降级：
+    //   1) 优先信客户端返回的 loggedIn；
+    //   2) 读不到时，退化为「助手自己的账号池非空」——账号池非空即可用。
+    // 刻意不做「无条件置真」：客户端确实登出、账号池也为空时，仍应显示未登录。
+    let loggedIn = false;
     try {
-      const r = await api.workbuddy.clientStatus();
-      set({ wbClientLoggedIn: r.loggedIn });
+      loggedIn = !!(await api.workbuddy.clientStatus()).loggedIn;
     } catch {
-      // 客户端检测失败不阻断初始化，保持默认未登录态
+      /* 客户端登录态不可读（如 5.6.2+ 的加密格式），落到下方账号池兜底 */
     }
+    if (!loggedIn) {
+      try {
+        loggedIn = (await api.workbuddy.listAccounts()).length > 0;
+      } catch {
+        /* 账号池也读不到，保持未登录 */
+      }
+    }
+    set({ wbClientLoggedIn: loggedIn });
   },
   refreshCert: async () => {
     try {

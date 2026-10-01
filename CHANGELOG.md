@@ -4,6 +4,35 @@
 
 ---
 
+## [未发布]
+
+修复 WorkBuddy 面板「客户端未登录」误报，并补充配套运维脚本。
+
+### 修复
+
+- **左上角常驻误报「WorkBuddy 客户端未登录」**（`src/store.ts`）
+  - 根因：WorkBuddy 客户端 **5.6.2** 起对 `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth\workbuddy-desktop.info` 的 token 做了**字段级静态加密** —— `accessToken` / `refreshToken` 由明文字符串变为 `{ "$wbEncrypted": 1, "envelope": "..." }`（AES-GCM，实现见客户端 `app.asar` 的 `at-rest-crypto`）。Rust 侧 `workbuddy_client_status` 仍按明文字符串解析，反序列化失败抛错；前端 `refreshWbClient` 的 `catch` 是空的，状态就停在 store 初值 `false`，于是状态灯常驻「客户端未登录」。同源的「导入本机账号」按钮（`workbuddy_import_local`）必然失败。
+  - 修复：`refreshWbClient` 改为**两级降级判据** —— 先信 `clientStatus().loggedIn`；读不到时退化为「助手账号池非空即视为可用」（`listAccounts().length > 0`）。**刻意不做无条件置真**：客户端确实登出且账号池为空时仍显示未登录。
+  - 影响面：仅左上角状态灯与「导入本机账号」；签到、积分、账号切换读的是助手自有的 `workbuddy_accounts.json`，不受影响。
+  - 完整证据链：`docs/analysis-wb-client-login-mismatch.md`。
+
+- **切换账号后左侧任务栏不统一**（`src-ps/workbuddy-switch-bridge.ps1` + `src-python/unify_sessions_owner.py`）
+  - 根因：任务列表由 `workbuddy.db` 的 `sessions.user_id` 决定（`sidebar-list-snapshot.json` 只是渲染缓存），换号后新旧会话归属不一致。
+  - 修复：切换完成时调用 `unify_sessions_owner.py`，把全部会话归属统一到目标账号；支持 `--report` 预演、`--apply` 落库、`--rollback` 精确还原，保证幂等。
+  - 说明：`docs/fix-session-owner-unify.md`。
+
+### 新增
+
+- `tools/patch-client-status/` —— 针对**已编译 exe** 的内嵌前端补丁工具。无需源码即可修复上述状态灯误报：解压内嵌 brotli 压缩的 JS → 改判据 → 原位覆写回原槽位。含幂等检测、锚点唯一性硬门禁、压缩长度门禁、回读逐字节校验、自动备份与一键回滚。
+- `tools/license-renew/` —— 授权（`license_guard`）到期自动续期脚本。从 exe 实时提取服务器地址与验签公钥，支持口令池轮试；纯标准库实现 RSA PKCS#1 v1.5 / SHA-256 验签；附计划任务安装脚本（登录后 3 分钟 + 每天 10:10，pythonw 无窗口）与飞书告警。
+- `src-python/unify_sessions_owner.py`、`src-ps/workbuddy-switch-bridge.ps1`。
+
+### 注意
+
+- 以上修复只落在**源码与配套脚本**中，**不改变已发布的 exe**。要进入正式版需重新 `npm run tauri build`；若只想修当前的已编译版本，直接用 `tools/patch-client-status/`。
+
+---
+
 ## [2.4.6] - 2026-09-14
 
 激活门口令获取渠道由公众号切换为 QQ 群。
