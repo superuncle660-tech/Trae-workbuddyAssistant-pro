@@ -1,0 +1,14 @@
+{
+  "code": "",
+  "code_list": [],
+  "server": "auto",
+  "server_fallback": "http://64.90.20.244:8443",
+  "threshold_days": 2,
+  "timeout": 15,
+  "retries": 3,
+  "exe_path": "trae-work-assistant.exe",
+  "pubkey_extra": [],
+  "alert_webhook": "",
+  "alert_format": "feishu_card",
+  "alert_cooldown_hours": 12
+}
